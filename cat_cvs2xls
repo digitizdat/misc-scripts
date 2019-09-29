@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+#
+# cat_cvs2xls
+#
+# Take a list of CSV files and consolidate them into a single Excel
+# spreadsheet, where each worksheet is one of the CSV files. The title of each
+# sheet is based on the name of the file.
+#
+# 29 Sep 2019 - Martin McGreal
+#
+from openpyxl import Workbook
+import click
+import csv
+import os
+
+@click.command(context_settings=dict(help_option_names=['-h', '-?', '--help']))
+@click.option('-o', '--output', default='output.xlsx', help='Output file')
+@click.argument('files', nargs=-1, type=click.Path())
+def main(files, output):
+    wb = None
+
+    for path in files:
+        bname = os.path.basename(path)
+        if wb is None:
+            wb = Workbook()
+            ws = wb.active
+        else:
+            ws = wb.create_sheet()
+
+        r = csv.reader(open(path))
+        header = next(r)
+
+        ws.title = bname
+        ws.append(header)
+        for line in r:
+            ws.append(line)
+
+    wb.save(output)
+
+
+if __name__ == '__main__':
+    main()
+
+
