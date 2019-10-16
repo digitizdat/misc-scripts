@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+#
+# extract_nonro_activity
+#
+# This script extracts non-readonly API calls from a CloudTrail log.
+# The CloudTrail log should be extracted via Athena using something similar to
+# the following query and dumped to CSV so that it only includes the expected
+# fields.
+#
+#   SELECT eventtime,
+#            useridentity.principalid,
+#            eventname,
+#            useragent,
+#            requestparameters,
+#            resources
+#   FROM cloudtrail_logs_table
+#   
+# Save the CSV file to the current working directory and change the csvfile
+# variable below to point to it.
+#
+# Running this script will produce an Excel spreadsheet in the current working
+# directory containing a separate sheet for each user's non-ro activity as well
+# as a sheet labelled "All" which includes all non-ro activity.
+#
+import csv
+import re
+import time
+import sys
+from openpyxl import Workbook
+
+# Modify this filename to the name of the file created by Athena.
+csvfile = sys.argv[1]
+
+# This list of patterns was determined by examining the ReadOnlyAccess managed
+# IAM policy. You may want to refine it.
+ro_patterns = """List
+Describe
+Get
+Search
+Detect
+Estimate
+Preview
+LookupEvents
+Verify
+Query
+AdminGet
+AdminList
+Deliver
+Scan
+BatchGet
+BatchCheck
+Check
+Retrieve
+Validate
+Read
+ESHttpGet
+ESHttpHead
+Test
+RequestUploadCred
+ResolveAlias
+BatchGetPartition
+Simulate
+Generate
+LocalizeText
+SampleChannelData
+Discover
+FilterLogEvents
+StartQuery
+SynthesizeSpeech
+GetReservedNodeExchangeOfferings
+BatchDescribe"""
+
+# Make a compound regex by appending '.*' to all of the ro_patterns and joining
+# them with a regex IF ('|') symbol.
+ro_regex = '|'.join([x+'.*' for x in ro_patterns.split()])
+activity = {}
+
+# You must use the re.match method here or else change the ro_patterns to have
+# anchors. (The match method automatically anchors to the front of the string.)
+r = csv.reader(open(csvfile))
+header = next(r)
+for l in r:
+    if not re.match(ro_regex, l[2]):  # Field 2 is the eventname (see query)
+        if l[1] not in activity:
+            activity[l[1]] = []
+ 
+        activity[l[1]] += [l]
+
+# Create an Excel workbook with a single sheet for each user and list their
+# activity chronologically.
+wb = Workbook()
+wsa = wb.active
+wsa.append(header)
+wsa.title = "All"
+for user in activity:
+    ws = wb.create_sheet()
+    if ':' in user:
+        (uid, username) = user.split(':', 1)
+    elif user == '':
+        (uid, username) = ('NOUID', 'NOUSER')
+    else:
+        (uid, username) = ('NOUID', user)
+
+    username = username[:31].replace('\\','').strip('/*?:[].')
+    print(username)
+    ws.title = username
+    ws.append(header)
+    for l in activity[user]:
+        wsa.append(l)
+        ws.append(l)
+datestamp = time.strftime("%Y%m%d")
+wb.save("{}-nonro_activty.xlsx".format(datestamp))
+
